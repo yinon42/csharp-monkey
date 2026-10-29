@@ -77,6 +77,7 @@ header button{background:#fef08a;box-shadow:0 4px 0 #ca8a04}
 .walk{line-height:1.8;font-size:16px}.walk code{background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px;direction:ltr;unicode-bidi:embed;font-family:Consolas,monospace}.hintline code{background:#fde68a;padding:0 5px;border-radius:5px;direction:ltr;unicode-bidi:embed;font-family:Consolas,monospace}
 .island.examisl{border-color:#a16207;background:linear-gradient(180deg,#fef08a,#fff);box-shadow:0 8px 0 #a16207;width:210px}.exammode{background:#7c3aed;color:#fff;border-radius:999px;padding:1px 10px;font-size:12px;font-weight:900;margin:3px 0}.examtag{background:#7c3aed}
 .bubwrap{flex:1;min-width:260px;display:flex;flex-direction:column;gap:8px}.status{border-radius:16px;padding:8px 16px;font-weight:800;background:#dcfce7;border:3px solid #16a34a}.status.sad{background:#fee2e2;border-color:#ef4444}.status.think{background:#fef9c3;border-color:#ca8a04}
+@media(max-width:640px){.logo{font-size:18px}header{padding:8px 10px;gap:6px}header button{padding:6px 10px;font-size:13px}.map .trail{display:none}.map{border-left:0}.island{width:min(78vw,260px)}.node{width:120px}.node .nnum{width:60px;height:60px;font-size:24px}.hero,.task{gap:8px}#kodiBox,.kodi{width:80px;height:80px}.bubble{font-size:15px;min-width:0}.bubble::before,.bubble::after{display:none}.tbtns{flex-direction:row;flex-wrap:wrap}.edwrap{height:320px}.scr{height:180px}.cmp{grid-template-columns:1fr}.navs .dot{width:24px;height:24px}#main{padding:10px}}
 </style></head>
 <body><header><span class="logo">C# Quest ⚡</span><button id="homeBtn"></button><button id="langBtn"></button></header><main id="main"></main>
 <script>// Mini C# interpreter (console subset) — supports int/double/bool/string/char, if/else, loops,
@@ -765,6 +766,7 @@ function route() {
 $('#langBtn').onclick = () => { lang = lang === 'he' ? 'en' : 'he'; localStorage.setItem('cq_lang', lang); route(); };
 $('#homeBtn').onclick = () => { location.hash = ''; };
 window.addEventListener('hashchange', route);
+let lastW = innerWidth; window.addEventListener('resize', () => { if ((innerWidth < 640) !== (lastW < 640) && !location.hash.includes('/')) route(); lastW = innerWidth; });
 const title = t => lang === 'he' ? t.title : (t.title_en || t.title);
 
 // winding path positions for a level map
@@ -781,7 +783,7 @@ function mapSVG(n, cols) {
 const starRow = (n, max = 3) => `<span class="stars">${'★'.repeat(n)}<i>${'★'.repeat(max - n)}</i></span>`;
 
 function homeView() {
-  const rec = recTopic(); const cols = 3;
+  const rec = recTopic(); const cols = innerWidth < 640 ? 1 : 3;
   const { h, svg, pts } = mapSVG(SLOTS.length, cols);
   const total = TOPICS.reduce((s, t) => s + t.exercises.length * 3, 0), got = TOPICS.reduce((s, t) => s + topicStars(t), 0);
   $('#main').innerHTML = `<section class="hero"><div id="kodiBox">${mascot('happy')}</div><div class="bubble" id="bubble"></div>
@@ -798,7 +800,7 @@ function homeView() {
 }
 
 function topicView(t) {
-  const cols = 4, ri = recExercise(t);
+  const cols = innerWidth < 480 ? 2 : innerWidth < 800 ? 3 : 4, ri = recExercise(t);
   const { h, svg, pts } = mapSVG(t.exercises.length, cols);
   $('#main').innerHTML = `<div class="crumb"><a href="#">🗺️ ${u('home')}</a> › ${t.icon || ''} ${esc(title(t))}</div>
    <section class="hero"><div id="kodiBox">${mascot('happy')}</div><div class="bubble" id="bubble"></div><button class="big yellow" id="lessonBtn">${u('lesson')}</button></section>
