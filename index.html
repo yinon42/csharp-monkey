@@ -78,6 +78,8 @@ header button{background:#fef08a;box-shadow:0 4px 0 #ca8a04}
 .island.examisl{border-color:#a16207;background:linear-gradient(180deg,#fef08a,#fff);box-shadow:0 8px 0 #a16207;width:210px}.exammode{background:#7c3aed;color:#fff;border-radius:999px;padding:1px 10px;font-size:12px;font-weight:900;margin:3px 0}.examtag{background:#7c3aed}
 .bubwrap{flex:1;min-width:260px;display:flex;flex-direction:column;gap:8px}.status{border-radius:16px;padding:8px 16px;font-weight:800;background:#dcfce7;border:3px solid #16a34a}.status.sad{background:#fee2e2;border-color:#ef4444}.status.think{background:#fef9c3;border-color:#ca8a04}
 @media(max-width:640px){.logo{font-size:18px}header{padding:8px 10px;gap:6px}header button{padding:6px 10px;font-size:13px}.map .trail{display:none}.map{border-left:0}.island{width:min(78vw,260px)}.node{width:120px}.node .nnum{width:60px;height:60px;font-size:24px}.hero,.task{gap:8px}#kodiBox,.kodi{width:80px;height:80px}.bubble{font-size:15px;min-width:0}.bubble::before,.bubble::after{display:none}.tbtns{flex-direction:row;flex-wrap:wrap}.edwrap{height:320px}.scr{height:180px}.cmp{grid-template-columns:1fr}.navs .dot{width:24px;height:24px}#main{padding:10px}}
+.tour{position:fixed;inset:0;z-index:60}.spot{position:fixed;border-radius:18px;box-shadow:0 0 0 9999px #0f172acc;border:4px solid #facc15;transition:all .3s;pointer-events:none}
+.tcard{position:fixed;background:#fff;border-radius:22px;border:4px solid #1e293b;box-shadow:0 8px 0 #0f172a55;padding:12px 14px;transition:top .3s,left .3s;animation:pop .3s}.tk{display:flex;gap:10px;align-items:flex-start}.tk .kodi{width:60px;height:60px;flex:none}.tk p{margin:4px 0;line-height:1.6}.tk small{color:#64748b}.tb{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:6px}.tb .mini{margin-inline-start:0;margin-inline-end:auto}
 </style></head>
 <body><header><span class="logo">C# Quest ⚡</span><button id="homeBtn"></button><button id="langBtn"></button></header><main id="main"></main>
 <script>// Mini C# interpreter (console subset) — supports int/double/bool/string/char, if/else, loops,
@@ -758,7 +760,7 @@ function route() {
   $('#langBtn').textContent = u('lang'); $('#homeBtn').textContent = '🗺️ ' + u('home');
   const [tid, ei] = location.hash.slice(1).split('/');
   const t = SLOTS.find(x => x.id === tid && !x.soon);
-  window.scrollTo(0, 0); document.querySelectorAll('.modal').forEach(x => x.remove()); clearInterval(timer);
+  window.scrollTo(0, 0); document.querySelectorAll('.modal,.tour').forEach(x => x.remove()); clearInterval(timer);
   if (!t) return homeView();
   if (ei === undefined || !t.exercises[+ei]) return topicView(t);
   return exerciseView(t, +ei);
@@ -852,7 +854,7 @@ function exerciseView(t, i) {
     <span class="navs">${i > 0 ? `<a class="pill" href="#${t.id}/${i - 1}">${lang === 'he' ? '→' : '←'}</a>` : ''}${t.exercises.map((x, j) => `<a class="dot ${LV[x.level].cls} ${st(x.id) ? 'done' : ''} ${j === i ? 'cur' : ''}" href="#${t.id}/${j}" title="${esc(x.title)}">${j + 1}</a>`).join('')}${i < t.exercises.length - 1 ? `<a class="pill" href="#${t.id}/${i + 1}">${lang === 'he' ? '←' : '→'}</a>` : ''}</span></div>
   <section class="task"><div id="kodiBox">${mascot('think')}</div>
     <div class="bubwrap"><div class="bubble" id="bubble"></div><div class="status" id="status" hidden></div></div>
-    <div class="tbtns"><button class="big yellow" id="hintBtn"></button><button class="big ghost" id="lessonBtn">${u('lesson')}</button></div></section>
+    <div class="tbtns"><button class="big yellow" id="hintBtn"></button><button class="big ghost" id="lessonBtn">${u('lesson')}</button><button class="big ghost" id="tourBtn" title="${lang === 'he' ? 'איך המסך עובד?' : 'How does this screen work?'}">❓ ${lang === 'he' ? 'איך זה עובד?' : 'How it works'}</button></div></section>
   <div class="split">
     <div class="pane"><div class="panehead">💻 Program.cs <button class="mini" id="resetBtn">${u('reset')}</button></div>
       <div class="edwrap"><pre class="gutter" id="gut"></pre><div class="hlwrap"><div class="hl" id="hl"></div></div><textarea id="code" spellcheck="false" dir="ltr" autocapitalize="off" autocomplete="off" wrap="off"></textarea></div>
@@ -881,6 +883,8 @@ function exerciseView(t, i) {
   $('#resetBtn').onclick = () => { if (confirm('?')) { localStorage.removeItem('cq2_code_' + id); exerciseView(t, i); } };
   document.querySelectorAll('.tchip').forEach(b => b.onclick = () => { const tc = e.tests[+b.dataset.j]; if (tc.sample || b.classList.contains('bad')) $('#inp').value = toInputs(tc.input).join('\n'); else status(lang === 'he' ? 'זו בדיקה מוסתרת 🔒 – כמו במבחן, צריך לחשוב על כל המקרים!' : 'That is a hidden test 🔒 – like in the exam, think of every case!', 'think'); });
 
+  $('#tourBtn').onclick = tour;
+  if (!localStorage.getItem('cq_tour_done')) setTimeout(tour, 500);
   const delay = () => 360 - 3.4 * +$('#spd').value;
   // animated run: mascot "types" input, output appears, current line highlighted
   function animate(trace, res, done) {
@@ -928,6 +932,53 @@ function exerciseView(t, i) {
       animate(tr, f.r, null);
     }
   };
+}
+
+// ---------- spotlight tour of the exercise screen ----------
+const TOUR = {
+  he: [
+    ['#bubble', '📋 המשימה', 'כאן קודי כותב לכם מה התוכנית צריכה לעשות: מה קוראים בקלט ומה צריך להדפיס. כאן מופיעים גם הרמזים שתפתחו.'],
+    ['.edwrap', '💻 העורך', 'כאן כותבים את הקוד ב-C#. כותבים בתוך <code>Main</code>, בין הסוגריים המסולסלים <code>{ }</code>. הקוד נשמר לבד.'],
+    ['#inp', '⌨️ קלט לבדיקה', 'מה שכתוב כאן הוא מה שהמשתמש "מקליד". כל שורה היא תשובה ל-<code>Console.ReadLine()</code> אחד. אפשר לשנות ולנסות מספרים אחרים.'],
+    ['#runBtn', '▶ הרצה', '<b>הרצה</b> רק מריצה את הקוד שלכם עם הקלט שכתבתם בתיבת הקלט, ומראה את התוצאה על המסך. זה לניסוי, ולא נותן כוכבים.'],
+    ['#scr', '🖥️ המסך', 'כאן רואים את התוכנית רצה: קודי מקליד את הקלט (בצהוב) ואז מופיע הפלט. בעורך מסומנת השורה שרצה עכשיו.'],
+    ['#checkBtn', '🚀 בדיקה', '<b>בדיקה</b> מריצה את הקוד על <b>כל</b> מקרי הבדיקה, גם על המוסתרים, כמו שבודקים במבחן. אם כולם עוברים מקבלים כוכבים ⭐'],
+    ['#testsrow', '✓ ✗ מקרי בדיקה', 'כל עיגול הוא מקרה בדיקה: 👁 = דוגמה שאפשר לראות, 🔒 = מוסתר. אחרי בדיקה הם נצבעים בירוק ✓ או באדום ✗, ומתחת רואים מה היה צפוי ומה יצא.'],
+    ['#hintBtn', '💡 רמזים ופתרון', 'נתקעתם? כל לחיצה פותחת עוד רמז. אחרי הרמז האחרון הכפתור הופך ל"הצג פתרון", עם הסבר שורה אחר שורה.'],
+    ['.lvlrow .stars', '⭐ כוכבים', '3 כוכבים = פתרתם לבד. 2 = פתרתם עם רמזים. 1 = פתרתם אחרי שראיתם את הפתרון. אפשר לחזור לתרגיל ולשפר!'],
+  ],
+  en: [
+    ['#bubble', '📋 The task', 'Kodi explains what the program must do: what to read as input and what to print. Hints you open appear here too.'],
+    ['.edwrap', '💻 Editor', 'Write your C# here, inside <code>Main</code> between the braces <code>{ }</code>. Your code is saved automatically.'],
+    ['#inp', '⌨️ Test input', 'This is what the "user types". Each line answers one <code>Console.ReadLine()</code>. Change it to try other values.'],
+    ['#runBtn', '▶ Run', '<b>Run</b> just runs your code with the input in the input box and shows the result on the screen. It is for experimenting and gives no stars.'],
+    ['#scr', '🖥️ Screen', 'Watch your program run: Kodi types the input (yellow), then the output appears. The editor highlights the line that is running.'],
+    ['#checkBtn', '🚀 Check', '<b>Check</b> runs your code on <b>all</b> test cases, including the hidden ones, like an exam grader. Pass them all to earn stars ⭐'],
+    ['#testsrow', '✓ ✗ Test cases', 'Each chip is a test case: 👁 = visible sample, 🔒 = hidden. After a check they turn green ✓ or red ✗, and below you see expected vs. got.'],
+    ['#hintBtn', '💡 Hints & solution', 'Stuck? Each click reveals another hint. After the last one the button becomes "Show solution", with a line-by-line explanation.'],
+    ['.lvlrow .stars', '⭐ Stars', '3 stars = solved on your own, 2 = with hints, 1 = after viewing the solution. You can come back and improve!'],
+  ]
+};
+function tour() {
+  const steps = TOUR[lang].filter(s => document.querySelector(s[0])); let k = 0;
+  const ov = document.createElement('div'); ov.className = 'tour'; ov.innerHTML = '<div class="spot"></div><div class="tcard"></div>'; document.body.appendChild(ov);
+  const spot = ov.querySelector('.spot'), card = ov.querySelector('.tcard');
+  const end = () => { ov.remove(); localStorage.setItem('cq_tour_done', 1); removeEventListener('resize', show); };
+  function show() {
+    const [sel, h, txt] = steps[k]; const el = document.querySelector(sel);
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const r = el.getBoundingClientRect(), pad = 8;
+    Object.assign(spot.style, { left: r.left - pad + 'px', top: r.top - pad + 'px', width: r.width + 2 * pad + 'px', height: r.height + 2 * pad + 'px' });
+    card.innerHTML = `<div class="tk">${mascot('happy')}<div><b>${h}</b> <small>${k + 1}/${steps.length}</small><p>${txt}</p></div></div>
+      <div class="tb"><button class="mini" data-a="skip">${lang === 'he' ? 'דלג' : 'Skip'}</button>${k ? `<button class="big ghost" data-a="prev">${lang === 'he' ? 'הקודם' : 'Back'}</button>` : ''}<button class="big orange" data-a="next">${k < steps.length - 1 ? (lang === 'he' ? 'הבא' : 'Next') : (lang === 'he' ? 'יאללה, מתחילים! 🚀' : "Let's go! 🚀")}</button></div>`;
+    const cw = Math.min(380, innerWidth - 20); card.style.width = cw + 'px';
+    const below = r.bottom + 16 + 230 < innerHeight;
+    card.style.top = (below ? r.bottom + 16 : Math.max(10, r.top - 16 - card.offsetHeight)) + 'px';
+    card.style.left = Math.min(Math.max(10, r.left + r.width / 2 - cw / 2), innerWidth - cw - 10) + 'px';
+  }
+  card.addEventListener('click', ev => { const a = ev.target.closest('[data-a]')?.dataset.a; if (a === 'next') { if (++k >= steps.length) end(); else show(); } else if (a === 'prev') { k--; show(); } else if (a === 'skip') end(); });
+  ov.addEventListener('click', ev => { if (ev.target === ov || ev.target === spot) { if (++k >= steps.length) end(); else show(); } });
+  addEventListener('resize', show); show();
 }
 
 function win(t, i, stars) {
