@@ -81,13 +81,22 @@ header button{background:#fef08a;box-shadow:0 4px 0 #ca8a04}
 .tour{position:fixed;inset:0;z-index:60}.spot{position:fixed;border-radius:18px;box-shadow:0 0 0 9999px #0f172acc;border:4px solid #facc15;transition:all .3s;pointer-events:none}
 .tcard{position:fixed;background:#fff;border-radius:22px;border:4px solid #1e293b;box-shadow:0 8px 0 #0f172a55;padding:12px 14px;transition:top .3s,left .3s;animation:pop .3s}.tk{display:flex;gap:10px;align-items:flex-start}.tk .kodi{width:60px;height:60px;flex:none}.tk p{margin:4px 0;line-height:1.6}.tk small{color:#64748b}.tb{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:6px}.tb .mini{margin-inline-start:0;margin-inline-end:auto}
 @media(max-width:640px){.hero .bubble,.task .bubwrap{flex:1 1 calc(100% - 100px)}.score{margin:0 auto;font-size:18px}}
+.qkeys{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.qk{font:700 13px Consolas,monospace;padding:6px 10px;border-radius:12px;background:#e0e7ff;box-shadow:0 3px 0 #818cf8;color:#312e81}.fixbtn{margin-inline-start:10px;padding:5px 14px;font-size:15px}
+#code,#inp{text-transform:none!important;font-variant:normal!important}
 </style></head>
 <body><header><span class="logo">C# Quest ⚡</span><button id="homeBtn"></button><button id="langBtn"></button></header><main id="main"></main>
 <script>// Mini C# interpreter (console subset) — supports int/double/bool/string/char, if/else, loops,
 // static methods, Console.ReadLine/Write/WriteLine, Parse, Math, casts, interpolation.
 (function (root) {
 'use strict';
-class CsError extends Error { constructor(msg, line, he) { super(msg); this.line = line; this.he = he; } }
+class CsError extends Error { constructor(msg, line, he, fixes) { super(msg); this.line = line; this.he = he; if (fixes) this.fixes = fixes; } }
+// canonical names for case-mismatch hints (C# stays case-sensitive; we only suggest)
+const KNOWN_OBJS = ['Console', 'Math', 'Convert', 'int', 'double', 'bool', 'string', 'long', 'char'];
+const KNOWN_MEMBERS = { Console: ['WriteLine', 'Write', 'ReadLine'], Math: ['Min', 'Max', 'Abs', 'Pow', 'Sqrt', 'Round', 'Floor', 'Ceiling', 'Truncate', 'Clamp', 'PI'], Convert: ['ToInt32', 'ToDouble', 'ToBoolean', 'ToString'],
+  int: ['Parse', 'MaxValue', 'MinValue'], double: ['Parse', 'MaxValue'], bool: ['Parse'], long: ['Parse'], string: ['Format', 'Join'] };
+const ROBOT_NAMES = ['Move', 'TurnLeft', 'TurnRight', 'Collect', 'IsPathClear', 'IsOnStar', 'AtGoal'];
+const CASE_MSG = (full) => `ב-C# יש הבדל בין אותיות גדולות לקטנות. אולי התכוונת ל-${full}?`;
+function ciFind(list, name) { return list.find(k => k.toLowerCase() === String(name).toLowerCase() && k !== name); }
 const TYPES = ['int','double','bool','string','var','char','long','float','void'];
 const KW = new Set(['if','else','while','for','do','break','continue','return','true','false','null','new','class','static','public','private','using','namespace','internal','const','foreach','in']);
 const OPS = ['<<=','>>=','==','!=','<=','>=','&&','||','++','--','+=','-=','*=','/=','%=','=>','+','-','*','/','%','<','>','=','!','(',')','{','}','[',']',';',',','.','?',':'];
@@ -155,6 +164,10 @@ function tokenize(src) {
     push('op', op); i += op.length;
   }
   push('eof', null);
+  for (const tk of toks) if (tk.t === 'id') {
+    const kw = [...TYPES, ...KW].find(k => k === tk.v.toLowerCase() && k !== tk.v);
+    if (kw && !['String', 'Boolean', 'Double', 'Int32', 'Int64', 'Char'].includes(tk.v)) throw new CsError(`'${tk.v}' should be '${kw}' (C# is case-sensitive)`, tk.line, CASE_MSG(kw), [{ from: tk.v, to: kw, line: tk.line }]);
+  }
   return toks;
 }
 const PREC = [['||'], ['&&'], ['==', '!='], ['<', '>', '<=', '>='], ['+', '-'], ['*', '/', '%']];
@@ -416,11 +429,13 @@ function run(src, opts) {
   const builtins = opts.builtins || {};
   let prog; try { prog = parse(src); } catch (x) { if (x instanceof CsError) return { ok: false, out: '', error: x, steps: 0, compile: true }; throw x; }
   const globals = new Map();
-  const err = (line, en, he) => { throw new CsError(en, line, he); };
+  const err = (line, en, he, fixes) => { throw new CsError(en, line, he, fixes); };
   function tick(line) { if (++steps > maxSteps) err(line, 'Too many steps (infinite loop?)', 'התוכנית רצה יותר מדי זמן – אולי יש לולאה אינסופית (infinite loop)? בדקו שהתנאי בלולאה משתנה.'); }
   function lookup(env, name, line) {
     for (let e = env; e; e = e.parent) if (e.vars.has(name)) return e.vars.get(name);
     if (globals.has(name)) return globals.get(name);
+    { const names = []; for (let e = env; e; e = e.parent) names.push(...e.vars.keys()); names.push(...globals.keys()); const c = ciFind(names, name) || ciFind(KNOWN_OBJS, name);
+      if (c) err(line, `The name '${name}' does not exist in the current context (did you mean '${c}'?)`, CASE_MSG(c), [{ from: name, to: c, line }]); }
     err(line, `The name '${name}' does not exist in the current context`, `המשתנה '${name}' לא קיים – צריך להגדיר אותו קודם (למשל int ${name} = 0;) או שיש שגיאת כתיב (אותיות גדולות/קטנות חשובות!)`);
   }
   function coerce(type, val, line, explicit) {
@@ -578,11 +593,13 @@ function run(src, opts) {
         return e.k === 'inc' ? nv : old;
       }
       case 'mem': {
-        if (e.o.k === 'var' && STATIC_OBJS.has(e.o.n) && !hasVar(env, e.o.n)) { if (e.o.n === 'Math' && e.n === 'PI') return D(Math.PI); if (e.o.n==='int'&&e.n==='MaxValue') return I(2147483647); if (e.o.n==='int'&&e.n==='MinValue') return I(-2147483648); err(e.line, `'${e.o.n}.${e.n}' is a method`, `${e.o.n}.${e.n} היא פעולה – צריך סוגריים ()`); }
+        if (e.o.k === 'var' && !hasVar(env, e.o.n) && !STATIC_OBJS.has(e.o.n)) caseCheck(e.o.n, e.n, e.line);
+        if (e.o.k === 'var' && STATIC_OBJS.has(e.o.n) && !hasVar(env, e.o.n)) { caseCheck(e.o.n, e.n, e.line); if (e.o.n === 'Math' && e.n === 'PI') return D(Math.PI); if (e.o.n==='int'&&e.n==='MaxValue') return I(2147483647); if (e.o.n==='int'&&e.n==='MinValue') return I(-2147483648); err(e.line, `'${e.o.n}.${e.n}' is a method`, `${e.o.n}.${e.n} היא פעולה – צריך סוגריים ()`); }
         if (e.o.k === 'tname') { if (e.o.n === 'int' && e.n === 'MaxValue') return I(2147483647); if (e.o.n === 'int' && e.n === 'MinValue') return I(-2147483648); if (e.o.n==='double'&&e.n==='MaxValue') return D(Number.MAX_VALUE); }
         const o = evalE(e.o, env);
         if (o.t === 'ns') return { t: 'ns', v: o.v + '.' + e.n };
         if (e.n === 'Length' && (o.t === 'string' || o.t === 'array')) return I(o.v.length);
+        if ((o.t === 'string' || o.t === 'array') && e.n.toLowerCase() === 'length') err(e.line, `'${e.n}' – did you mean Length?`, CASE_MSG('Length'), [{ from: e.n, to: 'Length', line: e.line }]);
         if (o.t === 'null') err(e.line, 'Object reference not set to an instance of an object.', 'ניסיון לגשת לערך null (NullReferenceException)');
         err(e.line, `'${o.t}' does not contain a definition for '${e.n}'`, `ל-${TYPE_HE[o.t] || o.t} אין תכונה בשם ${e.n}`);
       }
@@ -605,10 +622,18 @@ function run(src, opts) {
     if (l.k === 'index') { const o = evalE(l.o, env); const i = evalE(l.i, env); if (o.t !== 'array') err(l.line, 'Cannot assign', o.t === 'string' ? 'מחרוזת היא לקריאה בלבד – אי אפשר לשנות תו בודד' : 'אי אפשר להציב כאן'); if (i.v < 0 || i.v >= o.v.length) err(l.line, 'Index was outside the bounds of the array.', `אינדקס ${i.v} מחוץ לגבולות המערך`); return { type: o.et, get: () => o.v[i.v], set: v => { o.v[i.v] = v; } }; }
     err(l.line, 'The left-hand side of an assignment must be a variable', 'בצד שמאל חייב להיות משתנה');
   }
+  function caseCheck(objName, member, line) {
+    const fixes = []; let obj = objName;
+    if (!KNOWN_OBJS.includes(objName) && !['Int32','Int64','Double','Boolean','String','Program','System','CultureInfo'].includes(objName)) { const c = ciFind(KNOWN_OBJS, objName); if (!c) return; fixes.push({ from: objName, to: c, line }); obj = c; }
+    const mem = KNOWN_MEMBERS[obj] || [];
+    if (member && !mem.includes(member)) { const c = ciFind(mem, member); if (c) fixes.push({ from: member, to: c, line }); }
+    if (fixes.length) { const full = obj + '.' + (fixes.find(f => f.from === member)?.to || member); err(line, `'${objName}.${member}' – C# is case-sensitive, did you mean ${full}?`, CASE_MSG(full), fixes); }
+  }
   function callE(e, env) {
     const f = e.f;
     if (f.k === 'mem') {
       const objName = f.o.k === 'var' ? f.o.n : f.o.k === 'tname' ? f.o.n : null;
+      if (objName && !(f.o.k === 'var' && hasVar(env, objName))) caseCheck(objName, f.n, e.line);
       if (objName && (f.o.k === 'tname' || (STATIC_OBJS.has(objName) && !hasVar(env, objName)))) return callStatic(objName, f.n, e.args.map(a => evalE(a, env)), e.line);
       if (f.o.k === 'var' && (objName === 'Program') ) return callUser(f.n, e.args.map(a => evalE(a, env)), e.line);
       const o = evalE(f.o, env); const args = e.args.map(a => evalE(a, env));
@@ -623,13 +648,15 @@ function run(src, opts) {
           case 'Equals': return B(s === toStr(args[0]));
         }
       }
+      { const c = ciFind(['ToString', 'ToUpper', 'ToLower', 'Trim', 'Contains', 'StartsWith', 'EndsWith', 'Substring', 'IndexOf', 'Replace', 'Equals'], f.n); if (c) err(e.line, `'${f.n}' – did you mean ${c}?`, CASE_MSG(c), [{ from: f.n, to: c, line: e.line }]); }
       err(e.line, `'${o.t}' does not contain a definition for '${f.n}'`, `ל-${TYPE_HE[o.t] || o.t} אין פעולה בשם ${f.n}`);
     }
     if (f.k === 'var') {
       const args = e.args.map(a => evalE(a, env));
       if (prog.methods[f.n]) return callUser(f.n, args, e.line);
       if (builtins[f.n]) { const r = builtins[f.n](...args.map(a => a.v)); steps += 20; if (r === undefined) return null; return typeof r === 'boolean' ? B(r) : typeof r === 'number' ? I(r) : S(String(r)); }
-      const lower = Object.keys(prog.methods).concat(Object.keys(builtins)).find(k => k.toLowerCase() === f.n.toLowerCase());
+      const lower = Object.keys(prog.methods).concat(Object.keys(builtins), ROBOT_NAMES.filter(n => builtins[n])).find(k => k.toLowerCase() === f.n.toLowerCase());
+      if (lower) err(e.line, `The name '${f.n}' does not exist in the current context (did you mean '${lower}'?)`, CASE_MSG(lower + '()'), [{ from: f.n, to: lower, line: e.line }]);
       err(e.line, `The name '${f.n}' does not exist in the current context`, `הפעולה '${f.n}' לא קיימת` + (lower ? ` – אולי התכוונת ל-${lower}? (ב-C# אותיות גדולות/קטנות חשובות)` : ''));
     }
     err(e.line, 'Bad call', 'קריאה לא תקינה');
@@ -844,7 +871,40 @@ function setupEditor(id, starter) {
   return { mark(line, kind) { if (!line) { hl.style.display = 'none'; return; } hl.style.display = 'block'; hl.className = 'hl ' + (kind || ''); hl.style.top = (12 + (line - 1) * LH) + 'px';
       const top = (line - 1) * LH; if (top < ta.scrollTop || top > ta.scrollTop + ta.clientHeight - 2 * LH) { ta.scrollTop = top - 3 * LH; sync(); } } };
 }
-function errHTML(e) { return `<div class="errbox"><b>❌ ${u('errLine')} ${e.line || '?'}</b><div>${esc(lang === 'he' ? (e.he || e.message) : e.message)}</div><div class="sub">${esc(lang === 'he' ? e.message : (e.he || ''))}</div></div>`; }
+function errHTML(e) { const fx = e.fixes && e.fixes.length ? ` <button class="big green fixbtn" data-fixes="${esc(JSON.stringify(e.fixes))}">🔧 ${lang === 'he' ? 'תקן' : 'Fix'}</button>` : ''; return `<div class="errbox"><b>❌ ${u('errLine')} ${e.line || '?'}</b>${fx}<div>${esc(lang === 'he' ? (e.he || e.message) : e.message)}</div><div class="sub">${esc(lang === 'he' ? e.message : (e.he || ''))}</div></div>`; }
+
+// one-click fix for case mistakes (console -> Console, int.parse -> int.Parse)
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('.fixbtn'); if (!b) return;
+  const ta = $('#code'); if (!ta) return; let code = ta.value;
+  for (const f of JSON.parse(b.dataset.fixes)) {
+    const lines = code.split('\n'); const re = new RegExp('(^|[^\\w"])' + f.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w])', 'g');
+    const li = f.line - 1;
+    if (lines[li] !== undefined && re.test(lines[li])) { re.lastIndex = 0; lines[li] = lines[li].replace(re, (m, p) => p + f.to); }
+    code = lines.join('\n');
+  }
+  ta.value = code; ta.dispatchEvent(new Event('input')); b.closest('.errbox').remove();
+  status(lang === 'he' ? '🔧 תוקן! עכשיו נסו להריץ שוב.' : '🔧 Fixed! Now try running again.', 'happy');
+});
+// quick keys: '|' marks where the cursor goes
+const QKEYS = [
+  ['WriteLine', 'Console.WriteLine(|);'], ['ReadLine', 'Console.ReadLine()'], ['int.Parse', 'int.Parse(Console.ReadLine())'], ['double.Parse', 'double.Parse(Console.ReadLine())'],
+  ['if', 'if (|)\n{\n    \n}'], ['else', 'else\n{\n    |\n}'], ['for', 'for (int i = 0; i < |; i++)\n{\n    \n}'], ['while', 'while (|)\n{\n    \n}'],
+  ['Math.', 'Math.|'], ['( )', '(|)'], ['{ }', '{\n    |\n}'], ['" "', '"|"'], [';', ';'], ['==', ' == '], ['&&', ' && '], ['||', ' || '], ['%', ' % '], ['Tab', '    ']
+];
+function setupQuickKeys() {
+  const bar = $('#qkeys'); if (!bar) return;
+  bar.innerHTML = QKEYS.map(([l], i) => `<button type="button" class="qk" data-i="${i}">${esc(l)}</button>`).join('');
+  bar.addEventListener('mousedown', ev => { if (ev.target.closest('.qk')) ev.preventDefault(); }); // keep editor focus
+  bar.addEventListener('click', ev => {
+    const b = ev.target.closest('.qk'); if (!b) return; const ta = $('#code'); const tpl = QKEYS[+b.dataset.i][1];
+    const s = ta.selectionStart, ls = ta.value.lastIndexOf('\n', s - 1) + 1, ind = ta.value.slice(ls, s).match(/^\s*/)[0];
+    let txt = tpl.split('\n').map((l, j) => j ? ind + l : l).join('\n'); let pos = txt.indexOf('|');
+    if (pos < 0) pos = txt.length; else txt = txt.replace('|', '');
+    if (pos === txt.length && /\n {4}\n/.test(txt)) pos = txt.indexOf('\n    ') + 5 + ind.length; // inside the block
+    ta.focus(); ta.setRangeText(txt, s, ta.selectionEnd, 'start'); ta.selectionStart = ta.selectionEnd = s + pos; ta.dispatchEvent(new Event('input'));
+  });
+}
 
 // ---------- exercise ----------
 let timer = null;
@@ -858,15 +918,16 @@ function exerciseView(t, i) {
     <div class="tbtns"><button class="big yellow" id="hintBtn"></button><button class="big ghost" id="lessonBtn">${u('lesson')}</button><button class="big ghost" id="tourBtn" title="${lang === 'he' ? 'איך המסך עובד?' : 'How does this screen work?'}">❓ ${lang === 'he' ? 'איך זה עובד?' : 'How it works'}</button></div></section>
   <div class="split">
     <div class="pane"><div class="panehead">💻 Program.cs <button class="mini" id="resetBtn">${u('reset')}</button></div>
-      <div class="edwrap"><pre class="gutter" id="gut"></pre><div class="hlwrap"><div class="hl" id="hl"></div></div><textarea id="code" spellcheck="false" dir="ltr" autocapitalize="off" autocomplete="off" wrap="off"></textarea></div>
+      <div class="edwrap"><pre class="gutter" id="gut"></pre><div class="hlwrap"><div class="hl" id="hl"></div></div><textarea id="code" spellcheck="false" dir="ltr" autocapitalize="off" autocorrect="off" autocomplete="off" inputmode="text" wrap="off" aria-label="C# code"></textarea></div>
+      <div class="qkeys" id="qkeys" dir="ltr"></div>
       <div class="runbar"><button class="big green" id="runBtn">${u('run')}</button><button class="big orange" id="checkBtn">${u('check')}</button>
       <label class="spd">🐢 <input type="range" id="spd" min="0" max="100" value="60"> 🐇</label></div></div>
     <div class="pane"><div class="panehead">🖥️ ${u('screen')}</div>
       <div class="monitor"><div class="scr" id="scr" dir="ltr"><span class="cursor">▌</span></div></div>
-      <label class="inlab">${u('input')}</label><textarea id="inp" dir="ltr" rows="3">${esc(toInputs(sample.input).join('\n'))}</textarea>
+      <label class="inlab">${u('input')}</label><textarea id="inp" dir="ltr" rows="3" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" aria-label="input">${esc(toInputs(sample.input).join('\n'))}</textarea>
       <div class="testsrow" id="testsrow">${e.tests.map((tc, j) => `<button class="tchip" data-j="${j}">${tc.sample ? '👁' : '🔒'} ${j + 1}</button>`).join('')}</div>
       <div id="result"></div></div></div>`;
-  const ed = setupEditor(id, e.starter);
+  const ed = setupEditor(id, e.starter); setupQuickKeys();
   const showTask = () => say(`<div class="lvlrow"><span class="lvl ${LV[e.level].cls}">${lang === 'he' ? e.level : LV[e.level].en}</span>${t.mode === 'exam' ? ` <span class="lvl examtag">🏆 ${lang === 'he' ? 'סימולציית מבחן' : 'Exam simulation'}</span>` : ''} <b>${esc(e.title)}</b> ${starRow(st(id))}</div><div class="stmt">${e.statement}</div>${(e.hints || []).slice(0, m.hints).map((h, k) => `<div class="hintline">💡 <b>${lang === 'he' ? 'רמז' : 'Hint'} ${k + 1}:</b> ${esc(h).replace(/`([^`]+)`/g, '<code>$1</code>')}</div>`).join('')}`, 'think');
   showTask();
   $('#lessonBtn').onclick = () => modal(`<h2>${u('lesson')}</h2><div class="lessonBody">${(lang === 'en' && t.intro_en) || t.intro}</div>`);
